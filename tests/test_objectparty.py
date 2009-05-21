@@ -21,11 +21,10 @@ class ObjectParty(object):
         self._seen_ids=[]
 
     def store(self, obj):
-        try:
-            self._seen_ids.append(obj.id)
-        except:
+        if not obj.__dict__.get('id'):
             obj.id = str(uuid.uuid4())
-            self._seen_ids.append(obj.id)
+
+        self._seen_ids.append(obj.id)
 
         def reference_encoder(o):
             _data = o.__dict__
@@ -62,20 +61,19 @@ class TestObjectParty(unittest.TestCase):
         homer.spouse = Reference(marge)
         marge.spouse = Reference(homer)
 
-        bart = Person(name='Bart')
 
+        bart = Person(name='Bart')
+        lisa = Person(name='Lisa')
         bart.father = Reference(homer)
         bart.mother = Reference(marge)
-
-        lisa = Person(name='Lisa')
         lisa.father = Reference(homer)
         lisa.mother = Reference(marge)
 
         homer.children = [Reference(bart), Reference(lisa)]
         marge.children = [Reference(bart), Reference(lisa)]
 
-        p.store(bart)
         p.store(homer)
+        p.store(bart)
 
         import pprint
         for k in p.storage:
