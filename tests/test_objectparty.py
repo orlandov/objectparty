@@ -2,8 +2,9 @@
 
 import unittest
 import weakref
-import simplejson
-import uuid
+
+from simplejson import loads as jloads, dumps as jdumps
+from uuid import uuid4
 
 class Reference(object):
     def __init__(self, referent):
@@ -17,14 +18,12 @@ class ObjectParty(object):
     def __init__(self):
         self._storage = {}
         self._id_uuid = {}
-        self._seen_uuids = [] # TODO: turn this into a Set
+        self._seen_uuids = set()
 
     def mk_id(self):
-        return str(uuid.uuid4())
+        return str(uuid4())
 
     def object_id(self, obj, **kwargs):
-        # check if we have an id for this object, if not, create one and map
-        # the object's id() (python buildin) value to the generated uuid
         obj_id = id(obj)
         uuid = self._id_uuid.get(obj_id)
         if not uuid and kwargs.get('create'):
@@ -35,11 +34,8 @@ class ObjectParty(object):
 
 
     def _encode_object(self, obj):
-        # instead of modifying the original object, we should create a map of
-        # the real objects' id() (the python builtin) to storage uuids
-
         obj_uuid = self.object_id(obj, create=True)
-        self._seen_uuids.append(obj_uuid)
+        self._seen_uuids.add(obj_uuid)
 
         def object_encoder(o):
             # we're serializing a reference
@@ -69,19 +65,24 @@ class ObjectParty(object):
             _data['id'] = self.object_id(o)
             return _data
 
-        self._storage[obj_uuid] = simplejson.dumps(obj, default=object_encoder)
+        self._storage[obj_uuid] = jdumps(obj, default=object_encoder)
         return obj_uuid
 
     def store(self, obj):
-        self._seen_ids = []
+        self._seen_ids = set()
         encobj = self._encode_object(obj)
         return encobj
 
-    def get_undecoded(self, id):
-        return self._storage[id]
+    def get(self, id, **kwargs):
+        how = kwargs.get('how')
 
-    def get_decoded(self, id):
-        return simplejson.loads(self._storage[id])
+        if how == 'decoded':
+            return jloads(self._storage[id])
+        elif how == 'undecoded':
+            return self._storage[id]
+
+        raise RuntimeError("getting real objects back isn't yet supported")
+
 
 class Base(object):
     def __init__(self, **kwargs):
@@ -97,7 +98,7 @@ class TestObjectParty(unittest.TestCase):
 
         homer = Person(name='Homer')
         homer_uuid = p.store(homer)
-        homerobj = simplejson.loads(p.get_undecoded(homer_uuid))
+        homerobj = p.get(homer_uuid, how='decoded')
 
         self.assert_(homerobj.has_key('id'))
         self.assert_(homerobj['name'], 'Homer')
@@ -112,10 +113,10 @@ class TestObjectParty(unittest.TestCase):
 
         # should store bart implicitly
         homer_uuid = p.store(homer)
-        homerobj = p.get_decoded(homer_uuid)
+        homerobj = p.get(homer_uuid, how='decoded')
 
         bartuuid = homerobj['son']['$ref']
-        bartobj = p.get_decoded(bartuuid)
+        bartobj = p.get(bartuuid, how='decoded')
 
         self.assertEqual(bartobj['name'], 'Bart')
 
@@ -127,8 +128,7 @@ class TestObjectParty(unittest.TestCase):
 
         homerdict=homer.__dict__.copy();
 
-
-        margeobj = simplejson.loads(p.get_undecoded(marge.id))
+        margeobj = jloads(p.get_undecoded(marge.id))
 
         # check that the references are pointing to each other properly
         self.assertEqual(homerobj['spouse']['$ref'], margeobj['id'])
