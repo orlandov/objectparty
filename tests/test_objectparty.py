@@ -80,6 +80,8 @@ class ObjectParty(object):
     def get_undecoded(self, id):
         return self._storage[id]
 
+    def get_decoded(self, id):
+        return simplejson.loads(self._storage[id])
 
 class Base(object):
     def __init__(self, **kwargs):
@@ -100,7 +102,7 @@ class TestObjectParty(unittest.TestCase):
         self.assert_(homerobj.has_key('id'))
         self.assert_(homerobj['name'], 'Homer')
 
-    def test_one_reference(self):
+    def test_implicitly_store_reference(self):
         p = ObjectParty()
 
         homer = Person(name='Homer')
@@ -108,15 +110,16 @@ class TestObjectParty(unittest.TestCase):
 
         homer.son = Reference(bart)
 
+        # should store bart implicitly
         homer_uuid = p.store(homer)
-        bart_uuid = p.store(bart)
+        homerobj = p.get_decoded(homer_uuid)
 
-        homerobj = simplejson.loads(p.get_undecoded(homer_uuid))
-        bartobj = simplejson.loads(p.get_undecoded(bart_uuid))
+        bartuuid = homerobj['son']['$ref']
+        bartobj = p.get_decoded(bartuuid)
 
-        self.assertEqual(homerobj['son']['$ref'], bartobj['id'])
+        self.assertEqual(bartobj['name'], 'Bart')
 
-        return
+    def Xtest(self):
 
         marge = Person(name='Marge')
         homer.spouse = Reference(marge)
