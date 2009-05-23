@@ -1,8 +1,9 @@
 #!/usr/bin/python
 
+import pprint
+import sys
 import unittest
 import weakref
-import sys
 
 sys.path.append('lib')
 
@@ -17,7 +18,14 @@ class Base(object):
 
 class Person(Base): pass
 
+class Dog(Base): pass
+
+class Flea(Base): pass
+
 class TestObjectParty(unittest.TestCase):
+    def pprint(self, obj):
+        pprint.pprint(obj)
+
     def test_simple(self):
         p = ObjectParty()
 
@@ -27,6 +35,7 @@ class TestObjectParty(unittest.TestCase):
 
         self.assert_(homerobj.has_key('id'))
         self.assert_(homerobj['name'], 'Homer')
+        self.assertEqual(p.count(), 1)
 
     def test_implicitly_stored_reference(self):
         p = ObjectParty()
@@ -99,3 +108,49 @@ class TestObjectParty(unittest.TestCase):
         self.assertEqual(child1_obj['name'], "Lisa")
         self.assertEqual(child0_obj['father']['$ref'], homer_uuid)
         self.assertEqual(child1_obj['father']['$ref'], homer_uuid)
+
+    def test_non_reference_member_object(self):
+        p = ObjectParty()
+        bart = Person(name='Bart')
+        lisa = Person(name='Lisa')
+
+        dog = Dog(name="Santa's Little Helper")
+        lisa.dog = bart.dog = dog
+
+        bart_uuid = p.store(bart)
+        lisa_uuid = p.store(lisa)
+
+        bart_obj = p.get(bart_uuid, how='decoded')
+        lisa_obj = p.get(lisa_uuid, how='decoded')
+        dog_obj = p.get(bart_obj['dog']['$ref'], how='decoded')
+
+        self.assertEqual(dog_obj['name'], "Santa's Little Helper")
+        self.assertEqual(bart_obj['dog']['$ref'], dog_obj['id'])
+        self.assertEqual(lisa_obj['dog']['$ref'], dog_obj['id'])
+
+        flea0 = Flea()
+        flea1 = Flea()
+
+        bart.fleas = dog.fleas = [flea0, flea1]
+        dog_uuid = p.store(dog)
+        bart_uuid = p.store(bart)
+
+        self.assertEqual(
+            [ flea['$ref'] for flea in p.from_object(dog)['fleas'] ],
+            [ p.from_object(flea)['id'] for flea in [flea0, flea1] ]
+        )
+
+    def test_list_non_reference_object(self):
+        p = ObjectParty()
+        flea0 = Flea()
+        flea1 = Flea()
+
+        dog = Dog(name="Santa's Little Helper")
+        dog.fleas = [flea0, flea1]
+        dog_uuid = p.store(dog)
+
+        self.assertEqual(
+            [ flea['$ref'] for flea in p.from_object(dog)['fleas'] ],
+            [ p.from_object(flea)['id'] for flea in [flea0, flea1] ]
+        )
+        self.pprint(p._storage)

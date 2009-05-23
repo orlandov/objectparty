@@ -65,8 +65,24 @@ class ObjectParty(object):
                         self._encode_object(v.referent)
 
                     _data[k] = { "$ref": ref_uuid }
+                elif v.__class__ == list:
+                    for (i,elem) in enumerate(v):
+                        if elem.__class__ in [Reference, str, int, float, list, dict, None,
+                        True, False]: continue
 
-            _data['id'] = self.object_id(o)
+                        ref_uuid = self.object_id(v[i])
+                        ref_uuid = self._encode_object(v[i])
+                        v[i] = { "$ref": ref_uuid }
+
+                elif v.__class__ not in [str, int, float, list, dict, None,
+                        True, False]:
+                    ref_uuid = self.object_id(v, create=True)
+                    self._encode_object(v)
+                    _data[k] = { "$ref": ref_uuid }
+
+
+
+            _data['id'] = self.object_id(o, create=True)
             return _data
 
         self._storage[obj_uuid] = jdumps(obj, default=object_encoder)
@@ -77,6 +93,9 @@ class ObjectParty(object):
         encobj = self._encode_object(obj)
         return encobj
 
+    def count(self):
+        return len(self._storage)
+
     def get(self, id, **kwargs):
         how = kwargs.get('how')
 
@@ -86,3 +105,9 @@ class ObjectParty(object):
             return self._storage[id]
 
         raise RuntimeError("getting real objects back isn't yet supported")
+
+    def from_object(self, obj):
+        return jloads(self._storage[self.uuid_from_id(obj)])
+
+    def uuid_from_id(self, obj):
+        return self._id_uuid[id(obj)]
