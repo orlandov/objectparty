@@ -28,7 +28,7 @@ class TestObjectParty(unittest.TestCase):
         self.assert_(homerobj.has_key('id'))
         self.assert_(homerobj['name'], 'Homer')
 
-    def test_implicitly_store_reference(self):
+    def test_implicitly_stored_reference(self):
         p = ObjectParty()
 
         homer = Person(name='Homer')
@@ -36,50 +36,66 @@ class TestObjectParty(unittest.TestCase):
 
         homer.son = Reference(bart)
 
-        # should store bart implicitly
+        # bart should get stored implicitly
         homer_uuid = p.store(homer)
         homerobj = p.get(homer_uuid, how='decoded')
 
-        bartuuid = homerobj['son']['$ref']
-        bartobj = p.get(bartuuid, how='decoded')
+        bart_uuid = homerobj['son']['$ref']
+        bartobj = p.get(bart_uuid, how='decoded')
 
         self.assertEqual(bartobj['name'], 'Bart')
 
-    def Xtest(self):
+        # store bart explicitly
+        old_bart_uuid = bart_uuid
+        bart_uuid = p.store(bart)
+        bartobj = p.get(bart_uuid, how='decoded')
 
+        self.assertEqual(bartobj['name'], 'Bart')
+        self.assertEqual(old_bart_uuid, bart_uuid,
+            "uuid after explicitly storing implicitly stored object")
+
+    def test_mutually_referential(self):
+        p = ObjectParty()
+
+        homer = Person(name='Homer')
         marge = Person(name='Marge')
+
         homer.spouse = Reference(marge)
         marge.spouse = Reference(homer)
 
-        homerdict=homer.__dict__.copy();
+        homer_uuid = p.store(homer)
 
-        margeobj = jloads(p.get_undecoded(marge.id))
+        homerobj = p.get(homer_uuid, how='decoded')
+        marge_uuid = homerobj['spouse']['$ref']
+
+        margeobj = p.get(marge_uuid, how='decoded')
 
         # check that the references are pointing to each other properly
         self.assertEqual(homerobj['spouse']['$ref'], margeobj['id'])
         self.assertEqual(margeobj['spouse']['$ref'], homerobj['id'])
 
-        # check that the original object wasn't modified
-        # self.assertEqual(homer.__dict__, homerdict)
+    def test_list_of_references(self):
+        p = ObjectParty()
 
+        homer = Person(name='Homer')
         bart = Person(name='Bart')
         lisa = Person(name='Lisa')
+
         homer.children = [Reference(bart), Reference(lisa)]
-        marge.children = [Reference(bart), Reference(lisa)]
 
-        
         bart.father = Reference(homer)
-        bart.mother = Reference(marge)
         lisa.father = Reference(homer)
-        lisa.mother = Reference(marge)
 
+        homer_uuid = p.store(homer)
 
-        p.store(homer)
-        p.store(marge)
-        p.store(bart)
-        p.store(lisa)
+        homerobj = p.get(homer_uuid, how='decoded')
+        child0_uuid = homerobj['children'][0]['$ref']
+        child1_uuid = homerobj['children'][1]['$ref']
 
-        import pprint
-        for k in p._storage:
-            print "%s:\n\n%s\n\n" % (k, pprint.pformat(simplejson.loads(p.get_undecoded(k))))
-        print pprint.pformat(p._storage)
+        child0_obj = p.get(child0_uuid, how='decoded')
+        child1_obj = p.get(child1_uuid, how='decoded')
+
+        self.assertEqual(child0_obj['name'], "Bart")
+        self.assertEqual(child1_obj['name'], "Lisa")
+        self.assertEqual(child0_obj['father']['$ref'], homer_uuid)
+        self.assertEqual(child1_obj['father']['$ref'], homer_uuid)
