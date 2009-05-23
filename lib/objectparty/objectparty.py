@@ -42,7 +42,9 @@ class ObjectParty(object):
             if isinstance(o, Reference):
                 ref_uuid = self.object_id(o.referent)
 
-                if not ref_uuid or (ref_uuid not in self._seen_uuids and ref_uuid not in self._storage):
+                if  not ref_uuid or \
+                   (    ref_uuid not in self._seen_uuids \
+                    and ref_uuid not in self._storage):
                     ref_uuid = self.object_id(o.referent, create=True)
                     self._encode_object(o.referent)
 
@@ -56,7 +58,9 @@ class ObjectParty(object):
                 if isinstance(v, Reference):
                     ref_uuid = self.object_id(v.referent)
 
-                    if not ref_uuid or (ref_uuid not in self._seen_uuids and ref_uuid not in self._storage):
+                    if  not ref_uuid or \
+                       (    ref_uuid not in self._seen_uuids \
+                        and ref_uuid not in self._storage):
                         ref_uuid = self.object_id(v.referent, create=True)
                         self._encode_object(v.referent)
 
