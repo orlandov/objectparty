@@ -30,7 +30,10 @@ class TestObjectParty(unittest.TestCase):
         p = ObjectParty()
 
         homer = Person(name='Homer')
+
         homer_uuid = p.store(homer)
+        self.assertEqual(p.count(), 1)
+
         homerobj = p.get(homer_uuid, how='decoded')
 
         self.assert_(homerobj.has_key('id'))
@@ -47,6 +50,8 @@ class TestObjectParty(unittest.TestCase):
 
         # bart should get stored implicitly
         homer_uuid = p.store(homer)
+        self.assertEqual(p.count(), 2)
+
         homerobj = p.get(homer_uuid, how='decoded')
 
         bart_uuid = homerobj['son']['$ref']
@@ -58,6 +63,7 @@ class TestObjectParty(unittest.TestCase):
         old_bart_uuid = bart_uuid
         bart_uuid = p.store(bart)
         bartobj = p.get(bart_uuid, how='decoded')
+        self.assertEqual(p.count(), 2)
 
         self.assertEqual(bartobj['name'], 'Bart')
         self.assertEqual(old_bart_uuid, bart_uuid,
@@ -73,6 +79,7 @@ class TestObjectParty(unittest.TestCase):
         marge.spouse = Reference(homer)
 
         homer_uuid = p.store(homer)
+        self.assertEqual(p.count(), 2)
 
         homerobj = p.get(homer_uuid, how='decoded')
         marge_uuid = homerobj['spouse']['$ref']
@@ -96,6 +103,7 @@ class TestObjectParty(unittest.TestCase):
         lisa.father = Reference(homer)
 
         homer_uuid = p.store(homer)
+        self.assertEqual(p.count(), 3)
 
         homerobj = p.get(homer_uuid, how='decoded')
         child0_uuid = homerobj['children'][0]['$ref']
@@ -118,7 +126,11 @@ class TestObjectParty(unittest.TestCase):
         lisa.dog = bart.dog = dog
 
         bart_uuid = p.store(bart)
+
+        # lisa not stored yet
+        self.assertEqual(p.count(), 2)
         lisa_uuid = p.store(lisa)
+        self.assertEqual(p.count(), 3)
 
         bart_obj = p.get(bart_uuid, how='decoded')
         lisa_obj = p.get(lisa_uuid, how='decoded')
@@ -128,18 +140,6 @@ class TestObjectParty(unittest.TestCase):
         self.assertEqual(bart_obj['dog']['$ref'], dog_obj['id'])
         self.assertEqual(lisa_obj['dog']['$ref'], dog_obj['id'])
 
-        flea0 = Flea()
-        flea1 = Flea()
-
-        bart.fleas = dog.fleas = [flea0, flea1]
-        dog_uuid = p.store(dog)
-        bart_uuid = p.store(bart)
-
-        self.assertEqual(
-            [ flea['$ref'] for flea in p.from_object(dog)['fleas'] ],
-            [ p.from_object(flea)['id'] for flea in [flea0, flea1] ]
-        )
-
     def test_list_non_reference_object(self):
         p = ObjectParty()
         flea0 = Flea()
@@ -148,9 +148,27 @@ class TestObjectParty(unittest.TestCase):
         dog = Dog(name="Santa's Little Helper")
         dog.fleas = [flea0, flea1]
         dog_uuid = p.store(dog)
+        self.assertEqual(p.count(), 3)
 
         self.assertEqual(
             [ flea['$ref'] for flea in p.from_object(dog)['fleas'] ],
             [ p.from_object(flea)['id'] for flea in [flea0, flea1] ]
         )
-        self.pprint(p._storage)
+
+    def test_silly(self):
+        p = ObjectParty()
+        p.debug = 1
+
+        class C(object): pass
+        class D(object): pass
+        c = C()
+        d = D()
+
+        c.foo = [[[[[d]]]]]
+        p.store(c)
+        self.assertEqual(p.count(), 2)
+
+        self.assertEqual(
+            p.from_object(c)['foo'][0][0][0][0][0]['$ref'],
+            p.from_object(d)['id']
+        )

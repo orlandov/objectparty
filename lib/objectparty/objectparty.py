@@ -2,7 +2,7 @@
 
 import weakref
 
-from simplejson import loads as jloads, dumps as jdumps
+from simplejson import loads as jloads, dumps as jdumps, JSONEncoder
 from uuid import uuid4
 
 class Reference(object):
@@ -13,6 +13,69 @@ class Reference(object):
     def referent(self):
         return self._referent()
 
+class Encoder(JSONEncoder):
+    def __init__(self, db):
+        JSONEncoder.__init__(self)
+        self.db = db
+
+    def encode_list(self, l):
+        for (i, elem) in enumerate(l):
+            if elem.__class__ in [str, int, float, None, True, False]: continue
+
+            obj = self.encode_object(l[i])
+            if isinstance(obj, dict) and obj.get('id'):
+                l[i] = { "$ref": obj['id'] }
+        return l
+
+    def encode_object(self, o):
+        if isinstance(o, list):
+            return self.encode_list(o)
+
+        obj_uuid = self.db.object_id(o, create=True)
+        self.db._seen_uuids.add(obj_uuid)
+
+        # we're serializing a reference
+        if isinstance(o, Reference):
+            ref_uuid = self.db.object_id(o.referent)
+
+            if  not ref_uuid or \
+               (    ref_uuid not in self.db._seen_uuids \
+                and ref_uuid not in self.db._storage):
+                ref_uuid = self.db.object_id(o.referent, create=True)
+                self.encode_object(o.referent)
+
+            return { "$ref": ref_uuid }
+
+        # we're serializing an object
+        _data = o.__dict__.copy()
+        for k in _data:
+            v = _data[k]
+
+            if isinstance(v, Reference):
+                ref_uuid = self.db.object_id(v.referent)
+
+                if  not ref_uuid or \
+                   (    ref_uuid not in self.db._seen_uuids \
+                    and ref_uuid not in self.db._storage):
+                    ref_uuid = self.db.object_id(v.referent, create=True)
+                    self.encode_object(v.referent)
+
+                _data[k] = { "$ref": ref_uuid }
+            elif v.__class__ == list:
+                _data[k] = self.encode_list(v)
+
+            elif v.__class__ not in [str, int, float, dict, None,
+                    True, False]:
+                ref_uuid = self.db.object_id(v, create=True)
+                self.encode_object(v)
+                _data[k] = { "$ref": ref_uuid }
+
+        _data['id'] = self.db.object_id(o, create=True)
+        self.db._storage[obj_uuid] = self.encode(_data)
+        return _data
+
+    def default(self, obj):
+        return self.encode_object(obj)
 
 class ObjectParty(object):
     def __init__(self):
@@ -32,73 +95,17 @@ class ObjectParty(object):
 
         return uuid
 
-    def _encode_object(self, obj):
-        obj_uuid = self.object_id(obj, create=True)
-        self._seen_uuids.add(obj_uuid)
-
-        # could this func be pulled out of here?
-        def object_encoder(o):
-            # we're serializing a reference
-            if isinstance(o, Reference):
-                ref_uuid = self.object_id(o.referent)
-
-                if  not ref_uuid or \
-                   (    ref_uuid not in self._seen_uuids \
-                    and ref_uuid not in self._storage):
-                    ref_uuid = self.object_id(o.referent, create=True)
-                    self._encode_object(o.referent)
-
-                return { "$ref": ref_uuid }
-
-            # we're serializing an object
-            _data = o.__dict__.copy()
-            for k in _data:
-                v = _data[k]
-
-                if isinstance(v, Reference):
-                    ref_uuid = self.object_id(v.referent)
-
-                    if  not ref_uuid or \
-                       (    ref_uuid not in self._seen_uuids \
-                        and ref_uuid not in self._storage):
-                        ref_uuid = self.object_id(v.referent, create=True)
-                        self._encode_object(v.referent)
-
-                    _data[k] = { "$ref": ref_uuid }
-                elif v.__class__ == list:
-                    for (i,elem) in enumerate(v):
-                        if elem.__class__ in [Reference, str, int, float, list, dict, None,
-                        True, False]: continue
-
-                        ref_uuid = self.object_id(v[i])
-                        ref_uuid = self._encode_object(v[i])
-                        v[i] = { "$ref": ref_uuid }
-
-                elif v.__class__ not in [str, int, float, list, dict, None,
-                        True, False]:
-                    ref_uuid = self.object_id(v, create=True)
-                    self._encode_object(v)
-                    _data[k] = { "$ref": ref_uuid }
-
-
-
-            _data['id'] = self.object_id(o, create=True)
-            return _data
-
-        self._storage[obj_uuid] = jdumps(obj, default=object_encoder)
-        return obj_uuid
-
     def store(self, obj):
         self._seen_ids = set()
-        encobj = self._encode_object(obj)
-        return encobj
+        enc_obj = Encoder(self).encode(obj)
+        obj_uuid = self.from_object(obj)['id']
+        return obj_uuid
 
     def count(self):
         return len(self._storage)
 
     def get(self, id, **kwargs):
         how = kwargs.get('how')
-
         if how == 'decoded':
             return jloads(self._storage[id])
         elif how == 'undecoded':
