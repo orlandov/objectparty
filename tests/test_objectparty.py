@@ -14,15 +14,12 @@ from objectparty import Reference, ObjectParty
 class Base(object):
     def __init__(self, **kwargs):
         self.__dict__ = kwargs
-        self.__dict__['__class__'] = self.__class__.__name__
 
 class Person(Base): pass
-
 class Dog(Base): pass
-
 class Flea(Base): pass
 
-class TestObjectParty(unittest.TestCase):
+class TestDeflate(unittest.TestCase):
     def pprint(self, obj):
         pprint.pprint(obj)
 
@@ -30,14 +27,14 @@ class TestObjectParty(unittest.TestCase):
         p = ObjectParty()
 
         homer = Person(name='Homer')
-
         homer_uuid = p.store(homer)
-        self.assertEqual(p.count(), 1)
 
         homerobj = p.get(homer_uuid, how='decoded')
 
+        self.assertEqual(p.count(), 1)
         self.assert_(homerobj.has_key('id'))
         self.assert_(homerobj['name'], 'Homer')
+        self.assertEqual(homerobj['__class_name__'], 'test_objectparty.Person')
         self.assertEqual(p.count(), 1)
 
     def test_implicitly_stored_reference(self):
@@ -172,3 +169,17 @@ class TestObjectParty(unittest.TestCase):
             p.from_object(c)['foo'][0][0][0][0][0]['$ref'],
             p.from_object(d)['id']
         )
+
+
+class TestInflate(unittest.TestCase):
+    def test_simple(self):
+        p = ObjectParty()
+
+        homer = Person(name='Homer')
+
+        homer_uuid = p.store(homer)
+        del(homer)
+        self.assertEqual(p.count(), 1)
+
+        homer = p.get(homer_uuid)
+        self.assertEqual(homer.name, 'Homer')

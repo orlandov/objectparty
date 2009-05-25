@@ -1,8 +1,9 @@
 #!python
 
+import sys
 import weakref
 
-from simplejson import loads as jloads, dumps as jdumps, JSONEncoder
+from simplejson import loads as jloads, dumps as jdumps, JSONEncoder, JSONDecoder
 from uuid import uuid4
 
 class Reference(object):
@@ -12,6 +13,25 @@ class Reference(object):
     @property
     def referent(self):
         return self._referent()
+
+
+class Decoder(JSONDecoder):
+    def __init__(self, db):
+        JSONDecoder.__init__(self, object_hook=self.inflate)
+        self.db = db
+
+    def inflate(self, obj):
+        cls = self._load_class(obj['__class_name__'])
+        inst = object.__new__(cls)
+        inst.__dict__ = obj.copy()
+
+        return inst
+
+    def _load_class(self, class_name):
+        module, name = class_name.rsplit('.', 1)
+        __import__(module)
+        return getattr(sys.modules[module], name)
+
 
 class Encoder(JSONEncoder):
     def __init__(self, db):
@@ -48,6 +68,7 @@ class Encoder(JSONEncoder):
 
         # we're serializing an object
         _data = o.__dict__.copy()
+        _data['__class_name__'] = "%s.%s" % self._class_info(o)
         for k in _data:
             v = _data[k]
 
@@ -77,6 +98,13 @@ class Encoder(JSONEncoder):
     def default(self, obj):
         return self.encode_object(obj)
 
+    def _class_info(self, obj):
+        cls = obj.__class__
+        module = cls.__module__
+        name = cls.__name__
+        return (module, name)
+
+
 class ObjectParty(object):
     def __init__(self):
         self._storage = {}
@@ -104,14 +132,18 @@ class ObjectParty(object):
     def count(self):
         return len(self._storage)
 
-    def get(self, id, **kwargs):
+    def get(self, obj_uuid, **kwargs):
         how = kwargs.get('how')
         if how == 'decoded':
-            return jloads(self._storage[id])
+            return jloads(self._storage[obj_uuid])
         elif how == 'undecoded':
-            return self._storage[id]
+            return self._storage[obj_uuid]
 
-        raise RuntimeError("getting real objects back isn't yet supported")
+        return self.inflate(obj_uuid)
+
+    def inflate(self, obj_uuid):
+        inflated = Decoder(self).decode(self._storage[obj_uuid])
+        return inflated
 
     def from_object(self, obj):
         return jloads(self._storage[self.uuid_from_id(obj)])
