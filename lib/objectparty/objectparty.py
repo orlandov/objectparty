@@ -47,6 +47,17 @@ class Encoder(JSONEncoder):
                 l[i] = { "$ref": obj['id'] }
         return l
 
+    def encode_reference(self, r):
+        ref_uuid = self.db.object_id(r.referent)
+
+        if  not ref_uuid or \
+           (    ref_uuid not in self.db._seen_uuids \
+            and ref_uuid not in self.db._storage):
+            ref_uuid = self.db.object_id(r.referent, create=True)
+            self.encode_object(r.referent)
+
+        return { "$ref": ref_uuid }
+
     def encode_object(self, o):
         if isinstance(o, list):
             return self.encode_list(o)
@@ -56,15 +67,7 @@ class Encoder(JSONEncoder):
 
         # we're serializing a reference
         if isinstance(o, Reference):
-            ref_uuid = self.db.object_id(o.referent)
-
-            if  not ref_uuid or \
-               (    ref_uuid not in self.db._seen_uuids \
-                and ref_uuid not in self.db._storage):
-                ref_uuid = self.db.object_id(o.referent, create=True)
-                self.encode_object(o.referent)
-
-            return { "$ref": ref_uuid }
+            return self.encode_reference(o)
 
         # we're serializing an object
         _data = o.__dict__.copy()
@@ -73,15 +76,7 @@ class Encoder(JSONEncoder):
             v = _data[k]
 
             if isinstance(v, Reference):
-                ref_uuid = self.db.object_id(v.referent)
-
-                if  not ref_uuid or \
-                   (    ref_uuid not in self.db._seen_uuids \
-                    and ref_uuid not in self.db._storage):
-                    ref_uuid = self.db.object_id(v.referent, create=True)
-                    self.encode_object(v.referent)
-
-                _data[k] = { "$ref": ref_uuid }
+                _data[k] = self.encode_reference(v)
             elif v.__class__ == list:
                 _data[k] = self.encode_list(v)
 
